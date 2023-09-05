@@ -18,11 +18,12 @@ if __name__ == "__main__":
     if args.m == "naivebayes":
         model = NaiveBayes(model_file=args.o)
     elif args.m == "perceptron":
-        model = Perceptron(model_file=args.o)
+        pass
+        # model = Perceptron(model_file=args.o)
 
-    else:
-        ## TODO Add any other models you wish to train
-        model = None
+    # else:
+    #     ## TODO Add any other models you wish to train
+    #     model = None
 
     model = model.train(input_file=args.i)
 
