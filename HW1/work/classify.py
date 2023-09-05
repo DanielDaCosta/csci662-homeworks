@@ -20,8 +20,8 @@ if __name__ == "__main__":
 
     if "nb" in args.m:
         model = NaiveBayes(model_file=args.m)
-    elif "perceptron" in args.m:
-        model = LogisticRegression(model_file=args.m)
+    # elif "perceptron" in args.m:
+    #     model = LogisticRegression(model_file=args.m)
 
     else:
         ## TODO Add any other models you wish to evaluate
