@@ -43,14 +43,14 @@ class Features:
 
 class Features_NB(Features):
 
-    def __init__(self, model_file, has_label=True):
-        super(Features_NB, self).__init__(model_file, has_label)
+    def __init__(self, model_file):
+        super(Features_NB, self).__init__(model_file)
         self.vocabulary = self.create_vocabulary(self.tokenized_text)
-        self.size_vocab = len(self.vocabulary)
-        self.feature_weights = self.generate_feature_weights(laplace_smoothing=True)
 
-    def read_input_file(self, input_file):
-
+    def read_inference_file(self, input_file):
+        """Read inference file that is in the form: <text> i.e. a line
+        of text that does not contain a tab.
+        """
         with open(input_file) as file:
             data = file.read().splitlines()
 
@@ -58,64 +58,43 @@ class Features_NB(Features):
 
         tokenized_text = [tokenize(text) for text in texts]
         return tokenized_text
-
-    def count_frequency_word_label(self, sentences, labels):
-        
+    
+    def create_vocabulary(self, tokenized_text, threshold=0):
+        """Creat vocabulary from training set, considering only words that have an occurence > threshold.
         """
-        :param sentences (list[list]): sentences tokenized
-        :param labels (list): list of labels
-        :return: count(c_j, w_i) refers to the count of word w_i in documents with label c_j
-                _sum_{i=1}^{V}{count(c_j, w_i)} sum of the counts of each word in our vocabulary in class c_j 
-                 count(c_j) refers to the count of label c_j 
-        """
-        count_word_label = []
-        count_words_per_label = defaultdict(int)
-        for sentence, label in zip(sentences, labels):
-            for token in sentence:
-                count_word_label.append((token, label))
-                count_words_per_label[label] += 1
-            
-        # count_word_label = [(token, label) for sentence, label in zip(sentences, labels) for token in sentence]
-        count_label = Counter(labels)
-        return Counter(count_word_label), count_words_per_label, count_label
-
-    def create_vocabulary(self, tokenized_text):
-
         # Append everything together in a dictionary
         flattened_list = [item for sublist in tokenized_text for item in sublist]
         flattened_list_count = Counter(flattened_list)
-        vocabulary = list(flattened_list_count.keys())
-        return vocabulary
-    
-    def generate_feature_weights(self, laplace_smoothing=True):
-        # Vocabulary
-        size_vocab = len(self.vocabulary)
 
-        # Maximum Likelihood Estimates
-        count_word, count_words_label, count_label = self.count_frequency_word_label(self.tokenized_text, self.labels)
+        # Considering only words that have an occurence > threshold.
+        flattened_list_count_filter = [word for word, count in flattened_list_count.items() if count > threshold]
 
-        # Feature Weights
-        feature_weights = defaultdict()
-        feature_weights["count_word"] = count_word
-        feature_weights["count_words_label"] = count_words_label
-        feature_weights["count_label"] = count_label
+        return flattened_list_count_filter
 
-        return feature_weights
+    def replace_unknown_word_with_oov(self, tokenized_sentence):
+        """Replace words that are not in vocabulary with OOV (Out-of-Vocabulary)
+        token
+        """
+        updated_sentence = []
+        for word in tokenized_sentence:
+            if word not in self.vocabulary:
+                updated_sentence.append('OOV')
+            else:
+                updated_sentence.append(word)
+        return updated_sentence
+        
+    def get_features(self, tokenized, model):
+        """Bag-of-words: return column vector of word counts, including OOV (Out-of-Vocabulary) token, if present.
+        Vector stores only non-zero values to improve performance
+        """
 
-    @classmethod 
-    def get_features(cls, tokenized, target_label, model):
+        # Replace words that are not in vocabulary with OOV
+        updated_text = model["Feature"].replace_unknown_word_with_oov(tokenized)
 
-        # Compute log(P(w_i|c_j)
-        features = []
-        total_prob = 0.0
-        for word in tokenized:
-            word_label = (word, target_label)
-            # Laplace Smoothing
-            prob = (model.feature_weights["count_word"][word_label] + 1)/(model.feature_weights["count_words_label"][target_label] + model.size_vocab)
-            prob_log = np.log(prob)
-            total_prob += prob_log # save total
+        bag_of_words = Counter(updated_text)
+        # Include OffsetFeature "prob_mu" to 1; which allows to include the probability of the label
+        # to the maximum likelihood estimation.
 
-        # add prior probability
-        n_documents = len(model.tokenized_text)
-        total_prob += np.log(model.feature_weights["count_label"][target_label]/n_documents)
-        return total_prob
+        bag_of_words["prob_mu"] = 1
+        return bag_of_words
+        

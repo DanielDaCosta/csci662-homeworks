@@ -14,6 +14,43 @@ class NaiveBayes(Model):
     def __init__(self, model_file):
         super(NaiveBayes, self).__init__(model_file)
 
+    def __count_frequency_word_label(self, sentences, labels):
+        
+        """
+        :param sentences (list[list]): sentences tokenized
+        :param labels (list): list of labels
+        :return: count(c_j, w_i) refers to the count of word w_i in documents with label c_j
+                _sum_{i=1}^{V}{count(c_j, w_i)} sum of the counts of each word in our vocabulary in class c_j 
+                 count(c_j) refers to the count of label c_j 
+        """
+        count_word_label = []
+        count_words_per_label = defaultdict(int)
+        for sentence, label in zip(sentences, labels):
+            for token in sentence:
+                count_word_label.append((token, label))
+                count_words_per_label[label] += 1
+            
+        # count_word_label = [(token, label) for sentence, label in zip(sentences, labels) for token in sentence]
+        count_label = Counter(labels)
+        return Counter(count_word_label), count_words_per_label, count_label
+    
+    def __compute_feature_weights(self, count_word_label, count_words_per_label, count_label, size_vocabulary, alpha=1):
+        """
+        :param alpha (int): Hyperparemeter alpha for Laplace Smooting
+        """
+        feature_weights = defaultdict(dict)
+        for word, label in count_word_label.keys():
+            # Maximum Likelihood Estimates
+            tmp = np.log((count_word_label[(word, label)] + alpha)/(size_vocabulary*alpha + count_words_per_label[label]))
+            feature_weights[label][word] = tmp
+
+        # Include Probability of each label: 
+        total_documents = sum(count_label.values())
+        for label in count_label.keys():
+            probability_label_name = "prob_mu"
+            feature_weights[label][probability_label_name] = np.log(count_label[label]/total_documents)
+        return feature_weights
+
     
     def train(self, input_file):
         """
@@ -22,8 +59,29 @@ class NaiveBayes(Model):
         :return: model: trained model 
         """
 
-        features_naive_bayes = Features_NB(input_file, True)
-        self.save_model(features_naive_bayes)
+        # Instanciate Features_NB class:
+        #   - Create Vocabulary
+        features_naive_bayes = Features_NB(input_file)
+
+        # Replace words that are not in vocabulary with OOV (Out-of-Vocabulary)
+        # token
+        updated_text = []
+        labels = features_naive_bayes.labels
+        for sentence in features_naive_bayes.tokenized_text:
+            tmp = features_naive_bayes.replace_unknown_word_with_oov(sentence)
+            updated_text.append(tmp)            
+
+        # Compute Feature Weights
+        count_word_label, count_words_per_label, count_label = self.__count_frequency_word_label(updated_text, labels)
+        feature_weights = self.__compute_feature_weights(count_word_label, count_words_per_label, count_label, len(features_naive_bayes.vocabulary))
+
+        # Build Model
+        nb_model = {
+            "feature_weights": feature_weights,
+            "Feature": features_naive_bayes
+        }
+        
+        self.save_model(nb_model)
     
         
 
@@ -35,15 +93,35 @@ class NaiveBayes(Model):
         :param model: the pretrained model
         :return: predictions list
         """ 
+        feature_weights = model["feature_weights"]
+        Feature_NB_class = model["Feature"]
 
         # Read Input File
-        tokenized_text = model.read_input_file(input_file)
+        tokenized_text = Feature_NB_class.read_inference_file(input_file)
 
         preds = []
+
+        # Choosing the label y which maximizes log p(x, y; μ, φ):
         for sentence in tokenized_text:
+            sentence_features = Feature_NB_class.get_features(sentence, model)
+            # print("Sentence Characters: ", len(sentence_features.keys()))
             class_predictions = defaultdict()
-            for label in set(model.labels):
-                class_predictions[label] = model.get_features(sentence, label, model)
+
+            for label in Feature_NB_class.labelset:
+                # print(label)
+                feature_weights_y = feature_weights[label]
+                # Compute Inner Product: feature_weights*feature_vector
+                # print(len(sentence_features))
+                total_sum = 0 
+                # print("Size match: @@@@@ ", len(sentence_features.keys() & feature_weights_y.keys()))
+                for key in sentence_features.keys():
+                    if key in feature_weights_y.keys():
+                        # print(key)
+                        total_sum += sentence_features[key] * feature_weights_y[key]
+                # result = sum(sentence_features[key] * feature_weights_y[key] for key in sentence_features.keys() & feature_weights_y.keys())
+                # print(result)
+
+                class_predictions[label] = total_sum
             # Find the class with the highest value
             class_with_highest_value = max(class_predictions, key=lambda k: class_predictions[k])
             preds.append(class_with_highest_value)
