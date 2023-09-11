@@ -9,27 +9,20 @@ import numpy as np
 def tokenize(text):
     # TODO customize to your needs
     text = text.translate(str.maketrans({key: " {0} ".format(key) for key in string.punctuation}))
-    return text.lower().split()
+    return text.split()
 
 class Features:
 
-    def __init__(self, data_file, has_label=True):
+    def __init__(self, data_file):
         with open(data_file) as file:
             data = file.read().splitlines()
 
-        # If dataset has label; break into 
-        if has_label:
-            data_split = map(methodcaller("rsplit", "\t", 1), data)
-            texts, self.labels = map(list, zip(*data_split))
-            self.labelset = list(set(self.labels))
-        else:
-            texts = data
-            self.labels = None
-            self.labelset = None
+        data_split = map(methodcaller("rsplit", "\t", 1), data)
+        texts, self.labels = map(list, zip(*data_split))
 
         self.tokenized_text = [tokenize(text) for text in texts]
 
-
+        self.labelset = list(set(self.labels))
 
     @classmethod 
     def get_features(cls, tokenized, model):
@@ -60,7 +53,8 @@ class Features_NB(Features):
         return tokenized_text
     
     def create_vocabulary(self, tokenized_text, threshold=0):
-        """Creat vocabulary from training set, considering only words that have an occurence > threshold.
+        """Creat vocabulary from training set, considering only words
+        that have an occurence > threshold.
         """
         # Append everything together in a dictionary
         flattened_list = [item for sublist in tokenized_text for item in sublist]

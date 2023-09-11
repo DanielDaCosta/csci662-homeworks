@@ -1,0 +1,5 @@
+the house had tiny little mouse 	pos.tru
+the cat saw the mouse 	pos.tru
+the mouse ran away from the house 	pos.tru
+the cat finally ate the mouse 	pos.tru
+the end of the mouse story 	pos.tru
