@@ -1,5 +1,0 @@
-pos.tru
-pos.dec
-pos.dec
-pos.tru
-pos.tru
