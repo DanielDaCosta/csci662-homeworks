@@ -16,18 +16,47 @@ if __name__ == "__main__":
     args = get_arguments()
 
     if args.m == "naivebayes":
-        model = NaiveBayes(model_file=args.o)
-    elif args.m == "perceptron":
-        pass
-        # model = Perceptron(model_file=args.o)
+        # Optimized hyperparameters for each dataset
+        if "questions.model" in args.o:
+            threshold = 9
+        elif "odiya.model" in args.o:
+            threshold = 2
+        elif "products.model" in args.o:
+            threshold = 2
+        else:
+            threshold = 0
+        model = NaiveBayes(model_file=args.o, threshold=threshold)
+    elif args.m == "logreg":
+        # Optimized hyperparameters for each dataset
+        if "questions.model" in args.o:
+            earning_rate=0.005
+            epochs=400
+            threshold=0
+            max_features=100
+        elif "odiya.model" in args.o:
+            learning_rate=0.000001
+            epochs=1000
+            threshold=10
+            max_features=1000
+        elif "products.model" in args.o:
+            learning_rate=0.9
+            epochs=1000
+            threshold=1
+            max_features=500
+        else:
+            learning_rate=0.2
+            epochs=200
+            threshold=1
+            max_features=100
+        model = LogisticRegression(model_file=args.o,
+                                   learning_rate=learning_rate,
+                                   epochs=epochs,
+                                   threshold=threshold,
+                                   max_features=max_features)
 
-    # else:
+    else:
+        pass
     #     ## TODO Add any other models you wish to train
     #     model = None
 
     model = model.train(input_file=args.i)
-
-
-
-
-

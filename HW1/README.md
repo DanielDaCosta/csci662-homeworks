@@ -1,9 +1,9 @@
-# NaiveBayes
-
 ## Train
 - 4dim
 ```
 python train.py -m naivebayes -i datasets/4dim.train.txt -o nb.4dim.model
+
+python train.py -m logreg -i datasets/4dim/train.txt -o logreg.4dim.model
 ```
 - odiya
 ```
