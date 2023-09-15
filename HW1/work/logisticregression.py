@@ -6,7 +6,7 @@ from Features import Features_LR
 import numpy as np
 
 class LogisticRegression(Model):
-    def __init__(self, model_file, learning_rate=None, epochs=None, threshold=None, max_features=None):
+    def __init__(self, model_file, learning_rate=None, epochs=None, threshold=None, max_features=None, batch_size=None):
         super(LogisticRegression, self).__init__(model_file)
         self.weights = None
         self.bias = None
@@ -14,6 +14,7 @@ class LogisticRegression(Model):
         self.learning_rate = learning_rate
         self.epochs = epochs
         self.Y_to_categorical = None # Map Y label to numerical
+        self.batch_size = batch_size
         self.threshold = threshold
         self.max_features = max_features
 
@@ -29,7 +30,7 @@ class LogisticRegression(Model):
         :param Z([num_documents, num_labels])
         :return e^Z/sum_{i=0}^{k}{e^{Z}}
         """
-        return np.exp(Z - np.max(Z, axis=1, keepdims=True))/np.sum(np.exp(Z), axis=1, keepdims=True)
+        return np.exp(Z - np.max(Z, axis=1, keepdims=True))/np.sum(np.exp(Z - np.max(Z, axis=1, keepdims=True)), axis=1, keepdims=True)
     
     def sigmoid(self, Z):
         """Sigmoid function for binary classification
@@ -94,7 +95,6 @@ class LogisticRegression(Model):
         else:
             # Apply Sigmoid
             S = self.sigmoid(Z)
-            print(S)
             # Rows with highest probability
             S_max = [1 if i > 0.5 else 0 for i in S]
 
@@ -147,23 +147,40 @@ class LogisticRegression(Model):
         else:
             Y_onehot = np.array(Y).reshape(-1, 1)
 
+        np.random.seed(0)
+        permutation = np.random.permutation(sample_size)
+        X_permutation = X[permutation]
+        Y_permutation_onehot = Y_onehot[permutation]
+
+        batch_size = self.batch_size
+
         for i in range(self.epochs):
-            # Z = softmax(X*W + b)
-            prob = self.predict_prob(X, self.weights, self.bias, multinomial)
+            
+            # Batch_size implementation
+            for j in range(0, sample_size, batch_size):
+                X_mini_batch = X_permutation[j:j+batch_size]
+                y_mini_batch = Y_permutation_onehot[j:j+batch_size]
 
-            # break            
+                # Z = softmax(X*W + b)
+                prob = self.predict_prob(X_mini_batch, self.weights, self.bias, multinomial)
+
+                # dL/dW
+                grad_w = (1/batch_size)*np.dot(X_mini_batch.T, prob - y_mini_batch)
+                grad_b =  (1/batch_size)*np.sum(prob - y_mini_batch, axis=0)
+
+            # # break            
             # dL/dW
-            grad_w = (1/sample_size)*np.dot(X.T, prob - Y_onehot)
-            grad_b =  (1/sample_size)*np.sum(prob - Y_onehot, axis=0)
+                # grad_w = (1/sample_size)*np.dot(X.T, prob - Y_onehot)
+                # grad_b =  (1/sample_size)*np.sum(prob - Y_onehot, axis=0)
 
-            self.weights = self.weights - (self.learning_rate*grad_w)
-            self.bias = self.bias - (self.learning_rate*grad_b)
+                self.weights = self.weights - (self.learning_rate*grad_w)
+                self.bias = self.bias - (self.learning_rate*grad_b)
 
             # Computing cross-entropy loss
             if multinomial:
-                loss = self.cross_entropy_loss(prob, Y_onehot)
+                loss = self.cross_entropy_loss(prob, y_mini_batch)
             else:
-                loss = self.binary_cross_entropy_loss(prob, Y_onehot)
+                loss = self.binary_cross_entropy_loss(prob, y_mini_batch)
 
             if verbose:
                 print(f"Epoch: {i+1} - Loss: {loss}")
@@ -178,7 +195,7 @@ class LogisticRegression(Model):
         }
         ## Save the model
         self.save_model(model)
-        return model
+        return model 
 
 
     def classify(self, input_file, model):

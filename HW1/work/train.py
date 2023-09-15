@@ -29,30 +29,35 @@ if __name__ == "__main__":
     elif args.m == "logreg":
         # Optimized hyperparameters for each dataset
         if "questions.model" in args.o:
-            earning_rate=0.005
-            epochs=400
+            learning_rate=0.15
+            epochs=500
             threshold=0
-            max_features=100
+            max_features=150
+            batch_size=32
         elif "odiya.model" in args.o:
-            learning_rate=0.000001
+            learning_rate=0.01
             epochs=1000
             threshold=10
             max_features=1000
+            batch_size=256
         elif "products.model" in args.o:
-            learning_rate=0.9
-            epochs=1000
-            threshold=1
-            max_features=500
+            learning_rate=0.95
+            epochs=100
+            threshold=2
+            max_features=1000
+            batch_size=256
         else:
-            learning_rate=0.2
-            epochs=200
-            threshold=1
-            max_features=100
+            learning_rate=0.35
+            epochs=500
+            threshold=5
+            max_features=2000
+            batch_size=64
         model = LogisticRegression(model_file=args.o,
                                    learning_rate=learning_rate,
                                    epochs=epochs,
                                    threshold=threshold,
-                                   max_features=max_features)
+                                   max_features=max_features,
+                                   batch_size=batch_size)
 
     else:
         pass

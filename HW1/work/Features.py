@@ -55,7 +55,7 @@ def remove_stop_words(text):
     return text_clean
 
 
-def tokenize(text):
+def tokenize(text, stop_words=True):
     # TODO customize to your needs
     text = text.translate(str.maketrans({key: " {0} ".format(key) for key in string.punctuation}))
     # re.sub('[^a-zA-Z]', '', dataset['Text'][i])
@@ -75,8 +75,9 @@ def tokenize(text):
 
     text = text.split()
 
-    # 5) Remove Stop Words
-    text = remove_stop_words(text)
+    # # 5) Remove Stop Words
+    # if stop_words:
+    # text = remove_stop_words(text)
 
     return text
 

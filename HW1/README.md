@@ -3,19 +3,25 @@
 ```
 python train.py -m naivebayes -i datasets/4dim.train.txt -o nb.4dim.model
 
-python train.py -m logreg -i datasets/4dim/train.txt -o logreg.4dim.model
+python train.py -m logreg -i datasets/4dim.train.txt -o logreg.4dim.model
 ```
 - odiya
 ```
 python train.py -m naivebayes -i datasets/odiya.train.txt -o nb.odiya.model
+
+python train.py -m logreg -i datasets/odiya.train.txt -o logreg.odiya.model
 ```
 - products
 ```
 python train.py -m naivebayes -i datasets/products.train.txt -o nb.products.model
+
+python train.py -m logreg -i datasets/products.train.txt -o logreg.products.model
 ```
 - questions
 ```
 python train.py -m naivebayes -i datasets/questions.train.txt -o nb.questions.model
+
+python train.py -m logreg -i datasets/questions.train.txt -o logreg.questions.model
 ```
 ## Classify
 - 4dim
