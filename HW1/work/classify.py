@@ -1,6 +1,8 @@
 import argparse
 from naivebayes import *
 from logisticregression import *
+from logisticregression_word2vec_extramile import *
+from naivebayes_tfidf_extramile import *
 
 
 def get_arguments():
@@ -18,14 +20,18 @@ def get_arguments():
 if __name__ == "__main__":
     args = get_arguments()
 
-    if "nb" in args.m:
+    if "nb." in args.m:
         model = NaiveBayes(model_file=args.m)
-    elif "logreg" in args.m:
+    elif "logreg." in args.m:
         model = LogisticRegression(model_file=args.m)
+    elif "word2vec" in args.m:
+        model = LogisticRegressionWord2Vec(model_file=args.m)
+    elif "tfidf" in args.m:
+        model = NaiveBayes_TF_IDF(model_file=args.m)
 
     else:
-        ## TODO Add any other models you wish to evaluate
-        model = None
+        print("No model selected")
+        exit(1)
         
     trained_model = model.load_model()
 

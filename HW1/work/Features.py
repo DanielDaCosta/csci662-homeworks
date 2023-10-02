@@ -7,6 +7,8 @@ import re
 from collections import Counter, defaultdict
 import numpy as np
 from itertools import islice
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
 
 def expand_contradictions(text):
 
@@ -55,7 +57,7 @@ def remove_stop_words(text):
     return text_clean
 
 
-def tokenize(text, stop_words=True):
+def tokenize(text, split=True):
     # TODO customize to your needs
     text = text.translate(str.maketrans({key: " {0} ".format(key) for key in string.punctuation}))
     # re.sub('[^a-zA-Z]', '', dataset['Text'][i])
@@ -72,8 +74,8 @@ def tokenize(text, stop_words=True):
 
     # 4) Remove digits and words with digits
     text = remove_digits_and_words_digits(text)
-
-    text = text.split()
+    if split:
+        text = text.split()
 
     # # 5) Remove Stop Words
     # if stop_words:
@@ -266,3 +268,76 @@ class Features_LR(Features):
         self.idf = idf
         tf_idf = tf*idf
         return tf_idf # Shape (n_documents, vocabulary)
+    
+
+#########################################
+# Logistic Regression Word2Vec Features #
+#########################################
+
+class Features_LR_Word2Vec(Features):
+
+    def __init__(self, model_file, embedding_matrix):
+        super(Features_LR_Word2Vec, self).__init__(model_file)
+        self.embedding_matrix = embedding_matrix # Need to save EmbeddingMatrix values for inference
+
+    def read_inference_file(self, input_file):
+        """Read inference file that is in the form: <text> i.e. a line
+        of text that does not contain a tab.
+        """
+        with open(input_file) as file:
+            data = file.read().splitlines()
+
+        texts = data
+
+        tokenized_text = [tokenize(text) for text in texts]
+        return tokenized_text
+    
+    def get_features_word2vec(self, tokenized_sentence):
+        """Convert sentence to Word2Vec Embeeding.
+        Each sentence is represented by the average of all of word embeddings 
+        of that sentence.
+        """
+        sentence_embedding = []
+        
+        for word in tokenized_sentence:
+            # get embedding of word if exists
+            try:
+                word_emb = self.embedding_matrix[word]
+                sentence_embedding.append(word_emb)
+            except: # remove Out-of-Vocabulary words
+                pass
+        
+        # Compute average of the sentence
+        if len(sentence_embedding) > 0:
+            stacked_arrays = np.vstack(sentence_embedding)
+            elementwise_average = np.mean(stacked_arrays, axis=0)
+        else:
+            elementwise_average = np.zeros(list(self.embedding_matrix.values())[0].shape[0])
+        return elementwise_average
+    
+###############################
+# Naive Bayes TF-IDF Features #
+###############################
+
+class Features_NB_TF_IDF(Features):
+
+    def __init__(self, model_file, threshold):
+        super(Features_NB_TF_IDF, self).__init__(model_file)
+        self.tfidf_vectorizer = None
+        self.threshold = threshold
+        
+    def get_features(self, input_data: pd.DataFrame):
+        """Compute TF-IDF for input dataframe
+        """
+        # loading CountVectorizer
+        tf_vectorizer = TfidfVectorizer(
+            min_df=self.threshold
+            )
+        
+        # Text Preprocessing
+        input_data.apply(lambda x: tokenize(x, split=False))
+
+        X_train_tf = tf_vectorizer.fit_transform(input_data)
+
+        self.tfidf_vectorizer = tf_vectorizer
+        return X_train_tf
