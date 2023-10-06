@@ -16,8 +16,17 @@ if __name__ == '__main__':
     parser.add_argument('-o', type=str, help='model file to be written')
 
     args = parser.parse_args()
+    
+    # Get paramaters
 
-    model = NeuralModel() # probably want to pass some arguments here
+    model = NeuralModel(
+        embeddingfile=args.E,
+        max_seq_length=args.f,
+        hidden_units=args.u,
+        minibatch_size=args.b,
+        learning_rate=args.l,
+        epochs=args.e
+    )
     
     model.train(args.i)
     
