@@ -1,6 +1,7 @@
 import pickle
 import argparse
-from neural_model import NeuralModel
+from neural_model import NeuralModel_Torch
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Neural net training arguments.')
@@ -17,7 +18,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # Get paramaters
-    model = NeuralModel(
+
+    model = NeuralModel_Torch(
         embeddingfile=args.E,
         max_seq_length=args.f,
         hidden_units=args.u,
@@ -25,7 +27,7 @@ if __name__ == '__main__':
         learning_rate=args.l,
         epochs=args.e
     )
-    
+     
     model.train(args.i)
     
     model.save_model(args.o)
