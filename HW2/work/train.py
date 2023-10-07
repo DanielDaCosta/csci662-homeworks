@@ -14,10 +14,22 @@ if __name__ == '__main__':
     parser.add_argument('-E', type=str, help='word embedding file')
     parser.add_argument('-i', type=str, help='training file')
     parser.add_argument('-o', type=str, help='model file to be written')
+    parser.add_argument('-m', type=str, help='torch model or not')
 
     args = parser.parse_args()
     
     # Get paramaters
+    if args.m == "torch": # train torch model
+        print("!!! Training Torch model !!!")
+        model = NeuralModel(
+            embeddingfile=args.E,
+            max_seq_length=args.f,
+            hidden_units=args.u,
+            minibatch_size=args.b,
+            learning_rate=args.l,
+            epochs=args.e
+        )
+        
 
     model = NeuralModel(
         embeddingfile=args.E,

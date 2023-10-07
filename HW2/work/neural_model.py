@@ -2,6 +2,9 @@ from model import Model
 from nn_layers import FeedForwardNetwork
 import numpy as np
 from Features import Features_FeedForward
+import torch
+import torch.optim as optim
+import torch.nn as nn
 
 class NeuralModel(Model):
     def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs): 
@@ -242,5 +245,180 @@ class NeuralModel(Model):
         for y in y_test:
             tmp = self.Y_to_categorical[y]
             preds_label.append(tmp)
+        
+        return preds_label
+    
+
+
+#################
+# PyTorch Model #
+#################
+
+class NeuralNetworkTorch(nn.Module):
+    def __init__(self, input_dim, hidden_units, n_labels):
+        super(NeuralNetworkTorch, self).__init__()
+        self.weights_1 = nn.Linear(input_dim, hidden_units)
+        self.relu = nn.ReLU()
+        self.weights_2 = nn.Linear(hidden_units, n_labels)
+        self.softmax = nn.Softmax(dim=1)  # Apply softmax along the output dimension
+
+    def forward(self, x):
+        # ---------------- Input-to-Hidden Layer --------------- #
+        x = self.weights_1(x)
+        x = self.relu(x)
+        # ---------------- Hidden-to-Output Layer --------------- #
+        x = self.weights_2(x)
+        x = self.softmax(x)
+        return x
+
+class NeuralModel_Torch(Model):
+    def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs): 
+        self.embeddingfile = embeddingfile
+        self.embedding_dim = None
+        self.max_seq_length = max_seq_length
+        self.hidden_units = hidden_units
+        # Layers
+        self.model_torch = None
+        self.Y_to_categorical = None
+        self.criterion = nn.CrossEntropyLoss()
+        self.minibatch_size = minibatch_size
+        self.epochs = epochs
+        self.features_ff_class = None
+        self.learning_rate = learning_rate
+        self.loss = {}
+        
+    def convert_to_embeddings(self, sentence):
+        '''Convert sentence to embeddings
+        '''
+        emb = self.features_ff_class.get_features(sentence)
+            # try:
+        if emb: # if there is a word
+            emb_concat = np.concatenate(emb, axis=0)
+        else:
+            emb_concat = []
+        # If you need padding words (i.e., your input is too short), use a vector of zeroes
+        if len(emb) < self.max_seq_length:
+            # Missing words
+            words_missing = self.max_seq_length - len(emb)
+            # print(words_missing)
+            emb_concat = np.pad(emb_concat, (0, words_missing*self.embedding_dim), 'constant')
+        return emb_concat
+
+    
+    def train(self, input_file, verbose=False):
+
+        # Read dataset and create vocabulary
+        features_ff_class = Features_FeedForward(input_file, self.embeddingfile)
+        self.features_ff_class = features_ff_class
+        num_labels = len(features_ff_class.labelset)
+
+        # Convert Y from categorical to integers values
+        Y_mapping = {label: index for index, label in enumerate(np.unique(features_ff_class.labels))}
+        self.Y_to_categorical = {index: label for label, index in Y_mapping.items()} # dictionary to convert back y's to categorical
+        Y = [Y_mapping[y] for y in features_ff_class.labels]
+        Y = np.array(Y)
+        # Convert to OneHot for computing Loss
+        # Y_onehot = self.OneHot(Y, num_labels)
+
+        # Get embedding dim
+        self.embedding_dim = list(features_ff_class.embedding_matrix.values())[0].shape[0]
+
+        # Number of sentences
+        sample_size = len(features_ff_class.tokenized_text)
+
+        # X_train: shape: 50f or 300f-dim × features (u)
+        n_inputs = self.max_seq_length*self.embedding_dim # number of features
+        X_train = np.zeros((sample_size, n_inputs))
+
+        # Truncate input to the max sequence length
+        trunc_tokenized_text = features_ff_class.adjust_max_seq_length(
+            features_ff_class.tokenized_text,
+            self.max_seq_length
+        )
+
+        # Convert to embeddings with zero-padding
+        for i, sentence in enumerate(trunc_tokenized_text):
+            sentence_emb = self.convert_to_embeddings(sentence)
+            X_train[i] = sentence_emb
+
+        minibatch_size = self.minibatch_size
+
+        # Initialize Torch Model
+        self.model_torch = NeuralNetworkTorch(n_inputs, self.hidden_units, num_labels)
+        # Optimzer
+        optimizer = optim.SGD(self.model_torch.parameters(), lr=self.learning_rate)
+
+
+        #################
+        # Torch Tensors #
+        #################
+        # Permutate the dataset to increase randomness
+        np.random.seed(0)
+        permutation = np.random.permutation(sample_size)
+        # X_train[n_documents, n_features]
+        X_permutation = X_train[permutation]
+        Y_permutation = Y[permutation]
+
+
+        # Torch Tensors
+        X_permutation = torch.tensor(X_permutation, dtype=torch.float32)
+        Y_permutation = torch.tensor(Y_permutation)
+
+        for i in range(self.epochs):
+            # Mini-batch_size Implementation
+            mini_batch_loss = []
+            for j in range(0, sample_size, minibatch_size):
+                X_mini_batch = X_permutation[j:j+minibatch_size]
+                y_mini_batch = Y_permutation[j:j+minibatch_size]
+
+                ##########################################################
+                # ---------------------FORWARD PASS--------------------- #
+                ##########################################################
+                outputs = self.model_torch(X_mini_batch)
+
+                loss = self.criterion(outputs, y_mini_batch)
+
+                ##########################################################
+                # -------------------BACKWARD PASS---------------------- #
+                ##########################################################
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                mini_batch_loss.append(loss.item())
+
+            
+            self.loss[i] = np.mean(mini_batch_loss)
+            if verbose:
+                print(f"Epoch: {i+1} - Loss: {self.loss[i]}")
+
+    def classify(self, input_file):
+        # Read Input File
+        tokenized_text = self.features_ff_class.read_inference_file(input_file)
+
+        # Truncate input to the max sequence length
+        trunc_tokenized_text = self.features_ff_class.adjust_max_seq_length(
+            tokenized_text,
+            self.max_seq_length
+        )
+
+        X_test = []
+        # Convert to embeddings with zero padding
+        for i, sentence in enumerate(trunc_tokenized_text):
+            sentence_emb = self.convert_to_embeddings(sentence)
+            X_test.append(sentence_emb)
+        X_test = np.vstack(X_test)
+
+        # Convert to tensor
+        X_test = torch.tensor(X_test, dtype=torch.float32)
+
+        # Make Prediction
+        preds_label = []
+        with torch.no_grad():
+            predicted = self.model_torch(X_test)
+            _, y_test = torch.max(predicted, 1)
+            for y in y_test:
+                tmp = self.Y_to_categorical[y.item()] # Convert to original class
+                preds_label.append(tmp)
         
         return preds_label
