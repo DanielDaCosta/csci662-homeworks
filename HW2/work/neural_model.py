@@ -7,22 +7,51 @@ import torch.optim as optim
 import torch.nn as nn
 
 class NeuralModel(Model):
-    def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs): 
+    def __init__(self, embeddingfile,
+                 max_seq_length,
+                 hidden_units, minibatch_size,
+                 learning_rate,
+                 epochs,
+                 hidden_units_other_layers=[],
+                 tfidf=False,
+                 max_features=None,
+                 threshold=0,
+                 momentum=0):
+        '''
+        :param embeddingfile: word embedding file
+        :param hidden_units: number of hidden units
+        :param minibatch_size: mini-batch size
+        :param learning_rate: learning_rate: learning
+        :param epochs: number of epochs to train for
+        :param hidden_units_other_layers (list): number of hidden units in each layer
+        :param tfidf: Enable TF-IDF ranking
+        :param threshold: TF-IDF Vocabulary size
+        :param momentum: TF-IDF Minimum word frequency required
+        '''
         # self.network = FeedForwardNetwork()
         self.embeddingfile = embeddingfile
         self.embedding_dim = None
         self.max_seq_length = max_seq_length
-        self.hidden_units = hidden_units
-        self.weights_1 = None
-        self.bias_1 = None
-        self.weights_2 = None
-        self.bias_2 = None
+
+        self.hidden_units = [hidden_units] +  hidden_units_other_layers if len(hidden_units_other_layers) > 0 else [hidden_units]
+        # self.hidden_units = hidden_units if type(hidden_units) == list else [hidden_units] # list or int
+        self.n_hidden_layers = len(self.hidden_units)
+        self.weights = [None]*(self.n_hidden_layers + 1)
+        self.bias = [None]*(self.n_hidden_layers + 1)
+
+
         self.Y_to_categorical = None
         self.minibatch_size = minibatch_size
         self.epochs = epochs
         self.features_ff_class = None
         self.learning_rate = learning_rate
         self.loss = {}
+        # TF-IDF Sorting
+        self.tfidf = tfidf # enable sorting by tf-idf score
+        self.max_features = max_features
+        self.threshold = threshold
+        # Momentum
+        self.momentum = momentum
     
     def initialize_weights(self, n_inputs, n_output):
         # weights = np.zeros((n_inputs, n_output))
@@ -50,6 +79,9 @@ class NeuralModel(Model):
         :param S[num_documents, num_labels]: probabilities of features after softmax
         :target [num_documents, num_labels]: target one hot encoded
         """
+        epsilon = 1e-15
+        S = np.maximum(epsilon, S)
+        S = np.minimum(1 - epsilon, S)
         return -np.mean(np.log(S)*target)
 
     def softmax(self, Z):
@@ -73,12 +105,17 @@ class NeuralModel(Model):
         """Return prediction of X with the categorical values]
         """
         # z[num_documents, num_labels] = X[num_documents, num_features]*W[num_features, num_labels] + bias[num_labels]
-        A = np.dot(X, self.weights_1) + self.bias_1
-        h = self.relu_function(A)
+        Z_i = np.dot(X, self.weights[0]) + self.bias[0]
+        A_i = self.relu_function(Z_i)
+        i = 0
+        if self.n_hidden_layers > 1:
+            for i in range(self.n_hidden_layers-1):
+                Z_i = np.dot(A_i, self.weights[i+1]) + self.bias[i+1]
+                A_i = self.relu_function(Z_i)
 
-        A_2 = np.dot(h, self.weights_2) + self.bias_2
-
-        O = self.softmax(A_2)
+            i = i + 1
+        Z_i = np.dot(A_i, self.weights[i+1]) + self.bias[i+1]
+        O = self.softmax(Z_i)
 
         # Rows with highest probability
         S_max = np.argmax(O, axis=1)
@@ -106,7 +143,7 @@ class NeuralModel(Model):
     def train(self, input_file, verbose=False):
 
         # Read dataset and create vocabulary
-        features_ff_class = Features_FeedForward(input_file, self.embeddingfile)
+        features_ff_class = Features_FeedForward(input_file, self.embeddingfile, threshold=self.threshold, max_features=self.max_features)
         self.features_ff_class = features_ff_class
         num_labels = len(features_ff_class.labelset)
 
@@ -127,12 +164,18 @@ class NeuralModel(Model):
         n_inputs = self.max_seq_length*self.embedding_dim # number of features
         X_train = np.zeros((sample_size, n_inputs))
 
-        # Truncate input to the max sequence length
-        trunc_tokenized_text = features_ff_class.adjust_max_seq_length(
-            features_ff_class.tokenized_text,
-            self.max_seq_length
-        )
-
+        if self.tfidf: # Truncate input to the max sequence length sorted by TF-IDF
+            tf_idf = features_ff_class.tf_idf(features_ff_class.tokenized_text)
+            trunc_tokenized_text = features_ff_class.sort_by_tfidf(
+                tf_idf,
+                self.max_seq_length
+            )
+        else:
+            # Truncate input to the max sequence length
+            trunc_tokenized_text = features_ff_class.adjust_max_seq_length(
+                features_ff_class.tokenized_text,
+                self.max_seq_length
+            )
         # Convert to embeddings with zero-padding
         for i, sentence in enumerate(trunc_tokenized_text):
             sentence_emb = self.convert_to_embeddings(sentence)
@@ -140,15 +183,20 @@ class NeuralModel(Model):
 
         minibatch_size = self.minibatch_size
 
-        # Initialize Wieghts
+        # Initialize Weights
         # Create W_a and b_a
-        # W_a[n_documents, hidden_units (u)]
-        # b_a[hidden_units (u)]
-        W_1, b_1 = self.initialize_weights(n_inputs, self.hidden_units)
-        # Create Wb and b_b
-        # W_b[hidden_units (u), num_labels (d)]
-        # b_b[num_labels]
-        W_2, b_2 = self.initialize_weights(self.hidden_units, num_labels)
+        # W_0[n_documents, hidden_units (u)]
+        # b_0[hidden_units (u)]
+
+        list_of_sizes = [n_inputs] + self.hidden_units + [num_labels]
+        for i in range(self.n_hidden_layers + 1):
+            weights, bias = self.initialize_weights(list_of_sizes[i], list_of_sizes[i+1])
+            self.weights[i] = weights
+            self.bias[i] = bias
+
+        # Initilze Momentum weights
+        prev_dW_i = [0] * (self.n_hidden_layers + 1)
+        prev_db_i = [0] * (self.n_hidden_layers + 1)
 
         # Permutate the dataset to increase randomness
         np.random.seed(0)
@@ -157,11 +205,7 @@ class NeuralModel(Model):
         X_permutation = X_train[permutation]
         Y_permutation_onehot = Y_onehot[permutation]
 
-        self.weights_1 = W_1
-        self.bias_1 = b_1
-        self.weights_2 = W_2
-        self.bias_2 = b_2
-        for i in range(self.epochs):
+        for n_epoch in range(self.epochs):
             # Mini-batch_size Implementation
             mini_batch_loss = []
             for j in range(0, sample_size, minibatch_size):
@@ -171,66 +215,101 @@ class NeuralModel(Model):
                 ##########################################################
                 # ---------------------FORWARD PASS--------------------- #
                 ##########################################################
-            
-                # ---------------- Input-to-Hidden Layer --------------- #
-                # Z1 = W_a*X + b_a
-                # Z1[n_documents, hidden_units (u)]
-                Z_1 = np.dot(X_mini_batch, self.weights_1) + self.bias_1
-                # Hidden Unit
-                # h = relu(A)
-                # h[n_documents, hidden_units (u)]
-                A_1 = self.relu_function(Z_1)
+                # List of outputs of each layer
+                # A[0] -> Input Layer
+                # A[.] => Hidden Layer
+                # A[n] -> Ouput Layer
+                A = [None]*(self.n_hidden_layers + 2) 
+                Z = [None]*(self.n_hidden_layers + 2)
+                # ---------------- Input Layer --------------- #
+                A[0] = X_mini_batch
+                Z[0] = X_mini_batch
 
+                # ---------------- Hidden Layers --------------- #
+                for i in range(self.n_hidden_layers):
+                    # Z_i = np.dot(X_mini_batch, self.weights_i) + self.bias_i
+                    # A_i = relu(Z_i)
+                    Z_tmp = np.dot(A[i], self.weights[i]) + self.bias[i]
+                    Z[i+1] = Z_tmp
+                    A_tmp = self.relu_function(Z_tmp)
+                    A[i+1] = A_tmp
                 # ---------------- Hidden-to-Output Layer --------------- #
-                #  = W_b*h + b_b
-                # A_2[n_documents, num_labels (d)]
-                Z_2 = np.dot(A_1, self.weights_2) + self.bias_2
-                # Output Layer
-                # A_2 = softmax(Z_2)
-                # A_2[n_documents, num_labels (d)]
-                A_2 = self.softmax(Z_2)
+
+                i = i + 1
+                # print(i)
+                Z_output_layer = np.dot(A[i], self.weights[self.n_hidden_layers]) + self.bias[self.n_hidden_layers]
+                Z[i+1] = Z_output_layer
+                A_output_layer = self.softmax(Z_output_layer)
+                A[i+1] = A_output_layer
+
 
                 ##########################################################
                 # -------------------BACKWARD PASS---------------------- #
                 ##########################################################
 
                 # Compute Gradients
+                # List of output gradients of each layer
+                # dZ[0] -> Input Layer
+                # dZ[.] => Hidden Layer
+                # dZ[n] -> Ouput Layer
+                dZ = [None] * (self.n_hidden_layers + 1)
 
-                dZ_2 = A_2 - y_mini_batch # [n_documents, num_labels (d)]
-                # np.dot(A_2, dZ_2) => (hidden_units, n_documents) X (n_documents, num_labels) = (hidden_units, num_labels)
-                dW_2 = (1/minibatch_size)*np.dot(A_1.T, dZ_2)
-                db_2 = (1/minibatch_size)*np.sum(dZ_2, axis=0, keepdims = True) # [num_labels]
-                # np.dot(self.weights_b, dZ_2) => [n_documents, num_labels (d)] X [num_labels (d), hidden_units (u)] => [n_documents, hidden_units]
-                dZ_1 = np.dot(dZ_2, self.weights_2.T)*self.relu_derivative(Z_1)
-                # np.dot(X, dZ_1) => (features, n_documents) X (n_documents, hidden_units) = (hidden_units, num_labels)
-                dW_1 = (1/minibatch_size)*np.dot(X_mini_batch.T, dZ_1)
-                db_1 = (1/minibatch_size)*np.sum(dZ_1, axis=0, keepdims = True) # [hidden_units]
+                # dW[previous_layer, next_layer]
+                dW = [None] * (self.n_hidden_layers + 1)
+                db = [None] * (self.n_hidden_layers + 1)
+                dZ[-1] = A[-1] - y_mini_batch
+                for i in range(self.n_hidden_layers, 0, -1):
+                    dW[i] = (1/minibatch_size)*np.dot(A[i].T, dZ[i])
+                    db[i] = (1/minibatch_size)*np.sum(dZ[i], axis=0, keepdims = True)
+                    dZ[i-1] = np.dot(dZ[i], self.weights[i].T)*self.relu_derivative(Z[i])
 
-                # Update weights
-                self.weights_1 = self.weights_1 - self.learning_rate*dW_1
-                self.bias_1 = self.bias_1 - self.learning_rate*db_1
-                self.weights_2 = self.weights_2 - self.learning_rate*dW_2
-                self.bias_2 = self.bias_2 - self.learning_rate*db_2
+                # print(dZ[i-1])
+                dW[0] = (1/minibatch_size)*np.dot(X_mini_batch.T, dZ[i-1])
+                db[0] = (1/minibatch_size)*np.sum(dZ[i-1], axis=0, keepdims = True)
+
+                # Update Weights
+                for i in range(self.n_hidden_layers + 1):
+                    self.weights[i] = self.weights[i] - (self.learning_rate*dW[i] + self.momentum*prev_dW_i[i])
+                    self.bias[i] = self.bias[i] - (self.learning_rate*db[i] + self.momentum*prev_db_i[i])
+                    # Momentum
+                    # Save previous gradients for Momentum
+                    prev_dW_i[i] =  self.learning_rate*dW[i] + self.momentum*prev_dW_i[i]
+                    prev_db_i[i] =  self.learning_rate*db[i] + self.momentum*prev_db_i[i]
 
                 ########
                 # Loss #
                 ########
-                mini_batch_loss.append(self.cross_entropy_loss(A_2, y_mini_batch))
+                # print(y_mini_batch)
+                mini_batch_loss.append(self.cross_entropy_loss(A[-1], y_mini_batch))
 
             loss = np.mean(mini_batch_loss)
-            self.loss[i] = loss
+            self.loss[n_epoch] = loss
             if verbose:
-                print(f"Epoch: {i+1} - Loss: {loss}")
+                print(f"Epoch: {n_epoch+1} - Loss: {loss}")
 
     def classify(self, input_file):
         # Read Input File
         tokenized_text = self.features_ff_class.read_inference_file(input_file)
 
-        # Truncate input to the max sequence length
-        trunc_tokenized_text = self.features_ff_class.adjust_max_seq_length(
-            tokenized_text,
-            self.max_seq_length
-        )
+        if self.tfidf:
+            tf_idf_inference = []
+            # Get features from inference file
+            for sentence in tokenized_text:
+                # Transform dataset to TF-IDF space
+                # Return features with format (1, size_vocabulary)
+                X_sentence = self.features_ff_class.get_features_tfidf(sentence, self.features_ff_class.idf)
+                tf_idf_inference.append(X_sentence)
+            tf_idf_inference = np.stack(tf_idf_inference)
+            trunc_tokenized_text = self.features_ff_class.sort_by_tfidf(
+                tf_idf_inference,
+                self.max_seq_length
+            )
+        else:
+            # Truncate input to the max sequence length
+            trunc_tokenized_text = self.features_ff_class.adjust_max_seq_length(
+                tokenized_text,
+                self.max_seq_length
+            )
 
         X_test = []
         # Convert to embeddings with zero padding
@@ -247,7 +326,6 @@ class NeuralModel(Model):
             preds_label.append(tmp)
         
         return preds_label
-    
 
 
 #################
@@ -272,7 +350,7 @@ class NeuralNetworkTorch(nn.Module):
         return x
 
 class NeuralModel_Torch(Model):
-    def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs): 
+    def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs, adam=False): 
         self.embeddingfile = embeddingfile
         self.embedding_dim = None
         self.max_seq_length = max_seq_length
@@ -285,6 +363,7 @@ class NeuralModel_Torch(Model):
         self.epochs = epochs
         self.features_ff_class = None
         self.learning_rate = learning_rate
+        self.adam = adam
         self.loss = {}
         
     def convert_to_embeddings(self, sentence):
@@ -346,8 +425,10 @@ class NeuralModel_Torch(Model):
         # Initialize Torch Model
         self.model_torch = NeuralNetworkTorch(n_inputs, self.hidden_units, num_labels)
         # Optimzer
-        optimizer = optim.SGD(self.model_torch.parameters(), lr=self.learning_rate)
-
+        if self.adam:  
+            optimizer = optim.Adam(self.model_torch.parameters(), lr=self.learning_rate)
+        else:
+            optimizer = optim.SGD(self.model_torch.parameters(), lr=self.learning_rate)
 
         #################
         # Torch Tensors #
@@ -374,14 +455,15 @@ class NeuralModel_Torch(Model):
                 ##########################################################
                 # ---------------------FORWARD PASS--------------------- #
                 ##########################################################
-                outputs = self.model_torch(X_mini_batch)
+                optimizer.zero_grad()
+                outputs = self.model_torch.forward(X_mini_batch)
 
                 loss = self.criterion(outputs, y_mini_batch)
 
                 ##########################################################
                 # -------------------BACKWARD PASS---------------------- #
                 ##########################################################
-                optimizer.zero_grad()
+   
                 loss.backward()
                 optimizer.step()
 
@@ -401,7 +483,6 @@ class NeuralModel_Torch(Model):
             tokenized_text,
             self.max_seq_length
         )
-
         X_test = []
         # Convert to embeddings with zero padding
         for i, sentence in enumerate(trunc_tokenized_text):

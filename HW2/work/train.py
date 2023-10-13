@@ -13,9 +13,17 @@ if __name__ == '__main__':
     parser.add_argument('-E', type=str, help='word embedding file')
     parser.add_argument('-i', type=str, help='training file')
     parser.add_argument('-o', type=str, help='model file to be written')
+    parser.add_argument('-ul',
+                        type=lambda s: [int(item) for item in s.split(',')], default=[],
+                        help='number of hidden units in each layer. Example: "10,5"'
+    ) # Convert comma separated string to list
+    parser.add_argument('-m', type=float, default=0, help='momentum coefficient')
+    parser.add_argument('-tfidf', type=bool, default=False, help="Enable TF-IDF ranking")
+    parser.add_argument('-max_features', type=int, default=None, help="TF-IDF Vocabulary size")
+    parser.add_argument('-threshold', type=int, default=0, help="TF-IDF Minimum word frequency required")
 
     args = parser.parse_args()
-    
+
     # Get paramaters
     model = NeuralModel(
         embeddingfile=args.E,
@@ -23,7 +31,12 @@ if __name__ == '__main__':
         hidden_units=args.u,
         minibatch_size=args.b,
         learning_rate=args.l,
-        epochs=args.e
+        epochs=args.e,
+        tfidf=args.tfidf,
+        max_features=args.max_features,
+        threshold=args.threshold,
+        momentum=args.m,
+        hidden_units_other_layers=args.ul
     )
     
     model.train(args.i)

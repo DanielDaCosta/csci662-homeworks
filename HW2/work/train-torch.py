@@ -14,6 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('-E', type=str, help='word embedding file')
     parser.add_argument('-i', type=str, help='training file')
     parser.add_argument('-o', type=str, help='model file to be written')
+    parser.add_argument('-adam', type=str, default=False, help='Enable Adam optimizer')
 
     args = parser.parse_args()
     
@@ -25,7 +26,8 @@ if __name__ == '__main__':
         hidden_units=args.u,
         minibatch_size=args.b,
         learning_rate=args.l,
-        epochs=args.e
+        epochs=args.e,
+        adam=args.adam
     )
      
     model.train(args.i)

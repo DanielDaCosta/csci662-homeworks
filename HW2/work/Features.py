@@ -104,9 +104,15 @@ class Features:
 
 class Features_FeedForward(Features):
 
-    def __init__(self, input_file, embedding_file):
+    def __init__(self, input_file, embedding_file, threshold=0, max_features=None):
         super(Features_FeedForward, self).__init__(input_file)
         self.embedding_matrix = self.read_embedding_file(embedding_file) # Need to save EmbeddingMatrix values for inference
+        self.threshold = threshold
+        self.max_features = max_features
+        self.vocabulary = None
+        self.word2index = None
+        self.index2word = None
+        self.idf = None # Need to save IDF values for inference
 
     def adjust_max_seq_length(self, tokenized_text, max_seq_length):
         """Adjust size of data input to the max sequence length
@@ -150,6 +156,99 @@ class Features_FeedForward(Features):
 
         tokenized_text = [tokenize(text) for text in texts]
         return tokenized_text
+    
+    def create_vocabulary(self, tokenized_text, threshold, max_features=None):
+        """Creat vocabulary from training set, considering only words
+        that have an occurence > threshold.
+        """
+        # Append everything together in a dictionary
+        flattened_list = [item for sublist in tokenized_text for item in sublist]
+        flattened_list_count = Counter(flattened_list)
+
+        # Sort the dictionary by values in descending order
+        flattened_list_count = dict(sorted(flattened_list_count.items(), key=lambda item: item[1], reverse=True))
+
+        # Considering only words that have an occurence > threshold.
+        flattened_list_count_filter = {word:count for word, count in flattened_list_count.items() if count > threshold}
+
+        # Limit the size of the vocabulary based on max_features
+        if max_features:
+            flattened_list_count_filter = dict(islice(flattened_list_count_filter.items(), max_features-1))
+
+        # Add to vocabulary the Out-of-Vocabulary token
+        return list(flattened_list_count_filter.keys()) + ['UNK']
+    
+    def tf_idf(self, tokenized_text):
+        """Term frequency-inverse document frequency
+        """
+        # Create Vocabulary
+        self.vocabulary = self.create_vocabulary(tokenized_text, self.threshold, self.max_features)
+        self.word2index = {word: i for i, word in enumerate(self.vocabulary, start=0)}
+        self.index2word = {i: word for i, word in enumerate(self.vocabulary, start=0)}
+
+        size_vocabulary = len(self.vocabulary)
+        n_documents = len(tokenized_text)
+        tf_array = np.zeros((n_documents, size_vocabulary))
+        idf_array = np.zeros(size_vocabulary) # Inverse Document Frequency
+        words_per_document = np.zeros(n_documents)
+        # Compute Term-Frequency
+        for d_i, sentence in enumerate(tokenized_text, start=0):
+            words_in_document = []
+            for word in sentence:
+
+                index_word = self.word2index.get(word)
+                
+                if word in self.word2index.keys():
+                    tf_array[d_i][index_word] += 1
+                    words_per_document[d_i] += 1
+                    # Inverse Document Frequency
+                    if word not in words_in_document: # does not count repeated words in the same document
+                        words_in_document.append(word) 
+                        idf_array[index_word] += 1 # number of documents containing the term
+        tf = (tf_array + 1)/(words_per_document.reshape(-1, 1) + 1)
+        # Smoothing: to avoid division by zero errors and to ensure that terms with zero document
+        # frequency still get a non-zero IDF score
+        idf = np.log((n_documents + 1)/(idf_array + 1)) + 1 # Smoothing
+
+        self.idf = idf
+        tf_idf = tf*idf
+        return tf_idf # Shape (n_documents, vocabulary)
+    
+    def sort_by_tfidf(self, tfidf_matrix, max_seq_length):
+        """Sort input documents based on tf*idf score.
+        Return top "max_seq_length" words
+        :param: tfidf_matrix
+        :param: max_seq_length
+        :return: sentences ordered by TF-IDF score
+        """
+        
+        # Indices of sorted matrix in descending order
+        indices = np.argsort(-tfidf_matrix, axis=1)
+        tfidf_matrix_sorted = []
+
+        # Create sorted matrix
+        for i in range(tfidf_matrix.shape[0]):
+            # sentence in orderd version
+            tmp = [self.index2word[index] for index in indices[i][:max_seq_length]]
+            tfidf_matrix_sorted.append(tmp)
+    
+        return tfidf_matrix_sorted
+    
+    def get_features_tfidf(self, tokenized_sentence, idf_array):
+        """Convert sentence to TF-IDF space
+        """
+        size_vocabulary = len(self.vocabulary)
+        tf_array = np.zeros(size_vocabulary)
+        words_per_document = 0
+        # Compute Term-Frequency
+        words_in_document = []
+        for word in tokenized_sentence:
+            index_word = self.word2index.get(word)
+            if word in self.word2index.keys():
+                tf_array[index_word] += 1
+                words_per_document += 1
+        tf = (tf_array + 1)/(words_per_document+1) # with smoothinf
+        return tf*idf_array
     
     def get_features(self, tokenized_sentence):
         """Convert sentence to word embeeding values.
