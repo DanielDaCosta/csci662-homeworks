@@ -16,7 +16,8 @@ class NeuralModel(Model):
                  tfidf=False,
                  max_features=None,
                  threshold=0,
-                 momentum=0):
+                 momentum=0,
+                 average_emb_sentence=False):
         '''
         :param embeddingfile: word embedding file
         :param hidden_units: number of hidden units
@@ -27,11 +28,13 @@ class NeuralModel(Model):
         :param tfidf: Enable TF-IDF ranking
         :param threshold: TF-IDF Vocabulary size
         :param momentum: TF-IDF Minimum word frequency required
+        :param average_emb_sentence: Compute the average of the embeddings in the sentence instead of concatenation
         '''
         # self.network = FeedForwardNetwork()
         self.embeddingfile = embeddingfile
         self.embedding_dim = None
         self.max_seq_length = max_seq_length
+        self.average_emb_sentence = average_emb_sentence
 
         self.hidden_units = [hidden_units] +  hidden_units_other_layers if len(hidden_units_other_layers) > 0 else [hidden_units]
         # self.hidden_units = hidden_units if type(hidden_units) == list else [hidden_units] # list or int
@@ -122,21 +125,31 @@ class NeuralModel(Model):
 
         return S_max
     
-    def convert_to_embeddings(self, sentence):
-        '''Convert sentence to embeddings
+    def convert_to_embeddings(self, sentence, average_emb_sentence=False):
+        '''Convert sentence to embeddings.
+
+        :param average_sentence:  Compute the element-wise average of a list of sentence embedding
         '''
         emb = self.features_ff_class.get_features(sentence)
-            # try:
-        if emb: # if there is a word
-            emb_concat = np.concatenate(emb, axis=0)
+        if not average_emb_sentence:
+            if emb: # if there is a word
+                emb_concat = np.concatenate(emb, axis=0)
+            else:
+                emb_concat = []
+            # If you need padding words (i.e., your input is too short), use a vector of zeroes
+            if len(emb) < self.max_seq_length:
+                # Missing words
+                words_missing = self.max_seq_length - len(emb)
+                # print(words_missing)
+                emb_concat = np.pad(emb_concat, (0, words_missing*self.embedding_dim), 'constant')
         else:
-            emb_concat = []
-        # If you need padding words (i.e., your input is too short), use a vector of zeroes
-        if len(emb) < self.max_seq_length:
-            # Missing words
-            words_missing = self.max_seq_length - len(emb)
-            # print(words_missing)
-            emb_concat = np.pad(emb_concat, (0, words_missing*self.embedding_dim), 'constant')
+            # Compute average of the sentence
+            if len(emb) > 0:
+                stacked_arrays = np.vstack(emb)
+                emb_concat = np.mean(stacked_arrays, axis=0)
+            else:
+                emb_concat = np.zeros(self.embedding_dim)
+
         return emb_concat
 
     
@@ -161,7 +174,10 @@ class NeuralModel(Model):
         sample_size = len(features_ff_class.tokenized_text)
 
         # X_train: shape: 50f or 300f-dim × features (u)
-        n_inputs = self.max_seq_length*self.embedding_dim # number of features
+        if not self.average_emb_sentence:
+            n_inputs = self.max_seq_length*self.embedding_dim # number of features
+        else:
+            n_inputs = self.embedding_dim
         X_train = np.zeros((sample_size, n_inputs))
 
         if self.tfidf: # Truncate input to the max sequence length sorted by TF-IDF
@@ -178,7 +194,7 @@ class NeuralModel(Model):
             )
         # Convert to embeddings with zero-padding
         for i, sentence in enumerate(trunc_tokenized_text):
-            sentence_emb = self.convert_to_embeddings(sentence)
+            sentence_emb = self.convert_to_embeddings(sentence, average_emb_sentence=self.average_emb_sentence)
             X_train[i] = sentence_emb
 
         minibatch_size = self.minibatch_size
@@ -314,7 +330,7 @@ class NeuralModel(Model):
         X_test = []
         # Convert to embeddings with zero padding
         for i, sentence in enumerate(trunc_tokenized_text):
-            sentence_emb = self.convert_to_embeddings(sentence)
+            sentence_emb = self.convert_to_embeddings(sentence, average_emb_sentence=self.average_emb_sentence)
             X_test.append(sentence_emb)
         X_test = np.vstack(X_test)
 
@@ -335,26 +351,36 @@ class NeuralModel(Model):
 class NeuralNetworkTorch(nn.Module):
     def __init__(self, input_dim, hidden_units, n_labels):
         super(NeuralNetworkTorch, self).__init__()
-        self.weights_1 = nn.Linear(input_dim, hidden_units)
-        self.relu = nn.ReLU()
-        self.weights_2 = nn.Linear(hidden_units, n_labels)
-        self.softmax = nn.Softmax(dim=1)  # Apply softmax along the output dimension
+        self.n_hidden_layers = len(hidden_units)
+        self.activation = nn.ReLU()
+        # List of domensions
+        self.list_of_sizes = [input_dim] + hidden_units + [n_labels]
+
+        self.weights = nn.ModuleList([nn.Linear(self.list_of_sizes[i], self.list_of_sizes[i+1]) for i in range(self.n_hidden_layers)])
+
+        self.output_layer = nn.Linear(hidden_units[-1], n_labels)
+        # Last activation is a Softmax
+        self.softmax = nn.Softmax(dim=1) # Apply softmax along the output dimension
 
     def forward(self, x):
         # ---------------- Input-to-Hidden Layer --------------- #
-        x = self.weights_1(x)
-        x = self.relu(x)
+
+        for i in range(self.n_hidden_layers):
+            x = self.weights[i](x)
+            x = self.activation(x)
         # ---------------- Hidden-to-Output Layer --------------- #
-        x = self.weights_2(x)
+
+        x = self.output_layer(x)
         x = self.softmax(x)
         return x
 
 class NeuralModel_Torch(Model):
-    def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs, adam=False): 
+    def __init__(self, embeddingfile, max_seq_length, hidden_units, minibatch_size, learning_rate, epochs, hidden_units_other_layers=[],adam=False, average_emb_sentence=False): 
         self.embeddingfile = embeddingfile
         self.embedding_dim = None
         self.max_seq_length = max_seq_length
-        self.hidden_units = hidden_units
+        self.hidden_units = [hidden_units] +  hidden_units_other_layers if len(hidden_units_other_layers) > 0 else [hidden_units]
+        self.average_emb_sentence = average_emb_sentence
         # Layers
         self.model_torch = None
         self.Y_to_categorical = None
@@ -366,21 +392,31 @@ class NeuralModel_Torch(Model):
         self.adam = adam
         self.loss = {}
         
-    def convert_to_embeddings(self, sentence):
-        '''Convert sentence to embeddings
+    def convert_to_embeddings(self, sentence, average_emb_sentence=False):
+        '''Convert sentence to embeddings.
+
+        :param average_sentence:  Compute the element-wise average of a list of sentence embedding
         '''
         emb = self.features_ff_class.get_features(sentence)
-            # try:
-        if emb: # if there is a word
-            emb_concat = np.concatenate(emb, axis=0)
+        if not average_emb_sentence:
+            if emb: # if there is a word
+                emb_concat = np.concatenate(emb, axis=0)
+            else:
+                emb_concat = []
+            # If you need padding words (i.e., your input is too short), use a vector of zeroes
+            if len(emb) < self.max_seq_length:
+                # Missing words
+                words_missing = self.max_seq_length - len(emb)
+                # print(words_missing)
+                emb_concat = np.pad(emb_concat, (0, words_missing*self.embedding_dim), 'constant')
         else:
-            emb_concat = []
-        # If you need padding words (i.e., your input is too short), use a vector of zeroes
-        if len(emb) < self.max_seq_length:
-            # Missing words
-            words_missing = self.max_seq_length - len(emb)
-            # print(words_missing)
-            emb_concat = np.pad(emb_concat, (0, words_missing*self.embedding_dim), 'constant')
+            # Compute average of the sentence
+            if len(emb) > 0:
+                stacked_arrays = np.vstack(emb)
+                emb_concat = np.mean(stacked_arrays, axis=0)
+            else:
+                emb_concat = np.zeros(self.embedding_dim)
+
         return emb_concat
 
     
@@ -406,7 +442,10 @@ class NeuralModel_Torch(Model):
         sample_size = len(features_ff_class.tokenized_text)
 
         # X_train: shape: 50f or 300f-dim × features (u)
-        n_inputs = self.max_seq_length*self.embedding_dim # number of features
+        if not self.average_emb_sentence:
+            n_inputs = self.max_seq_length*self.embedding_dim # number of features
+        else:
+            n_inputs = self.embedding_dim
         X_train = np.zeros((sample_size, n_inputs))
 
         # Truncate input to the max sequence length
@@ -417,7 +456,7 @@ class NeuralModel_Torch(Model):
 
         # Convert to embeddings with zero-padding
         for i, sentence in enumerate(trunc_tokenized_text):
-            sentence_emb = self.convert_to_embeddings(sentence)
+            sentence_emb = self.convert_to_embeddings(sentence, average_emb_sentence=self.average_emb_sentence)
             X_train[i] = sentence_emb
 
         minibatch_size = self.minibatch_size
@@ -486,7 +525,7 @@ class NeuralModel_Torch(Model):
         X_test = []
         # Convert to embeddings with zero padding
         for i, sentence in enumerate(trunc_tokenized_text):
-            sentence_emb = self.convert_to_embeddings(sentence)
+            sentence_emb = self.convert_to_embeddings(sentence, average_emb_sentence=self.average_emb_sentence)
             X_test.append(sentence_emb)
         X_test = np.vstack(X_test)
 

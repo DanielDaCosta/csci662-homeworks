@@ -20,7 +20,8 @@ if __name__ == '__main__':
     parser.add_argument('-m', type=float, default=0, help='momentum coefficient')
     parser.add_argument('-tfidf', type=bool, default=False, help="Enable TF-IDF ranking")
     parser.add_argument('-max_features', type=int, default=None, help="TF-IDF Vocabulary size")
-    parser.add_argument('-threshold', type=int, default=0, help="TF-IDF Minimum word frequency required")
+    parser.add_argument('-threshold', type=int, default=0, help="TF-IDF Minimum word frequency required"),
+    parser.add_argument('-average_emb_sentence', type=bool, default=False, help="Compute the average of the embeddings in the sentence instead of concatenation")
 
     args = parser.parse_args()
 
@@ -36,7 +37,8 @@ if __name__ == '__main__':
         max_features=args.max_features,
         threshold=args.threshold,
         momentum=args.m,
-        hidden_units_other_layers=args.ul
+        hidden_units_other_layers=args.ul,
+        average_emb_sentence=args.average_emb_sentence
     )
     
     model.train(args.i)
