@@ -1,0 +1,9 @@
+train: true 
+train_augmented: false
+eval: true
+eval_transformed: false
+model_dir: ./out
+debug_transformation: false
+learning_rate: 5e-5
+num_epochs: 3
+small: true
