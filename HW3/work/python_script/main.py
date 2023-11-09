@@ -39,9 +39,6 @@ def do_train(args, model, train_dataloader, save_dir="./out"):
     model.train()
     progress_bar = tqdm(range(num_training_steps))
 
-    ################################
-    ##### YOUR CODE BEGINGS HERE ###
-    
     # Implement the training loop --- make sure to use the optimizer and lr_sceduler (learning rate scheduler)
     # Remember that pytorch uses gradient accumumlation so you need to use zero_grad (https://pytorch.org/tutorials/recipes/recipes/zeroing_out_gradients.html)
     # You can use progress_bar.update(1) to see the progress during training
@@ -51,6 +48,7 @@ def do_train(args, model, train_dataloader, save_dir="./out"):
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
             loss = outputs.loss
+            loss.backward()
 
             optimizer.step()
             lr_scheduler.step()
@@ -142,7 +140,7 @@ def create_transformed_dataloader(dataset, debug_transformation):
     transformed_val_dataset = transformed_tokenized_dataset    
     eval_dataloader = DataLoader(transformed_val_dataset, batch_size=8)
     
-    return eval_dataloader   
+    return eval_dataloader
 
 
 
@@ -242,4 +240,4 @@ if __name__ == "__main__":
         print("Score: ", score)
         
         out_file.close()
-        
+
