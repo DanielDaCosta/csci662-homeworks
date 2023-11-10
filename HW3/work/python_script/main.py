@@ -13,6 +13,11 @@ import argparse
 from utils import *
 import os
 
+###############
+# New Imports #
+###############
+from datasets import concatenate_datasets
+
 # Set seed
 random.seed(0)
 torch.manual_seed(0)
@@ -91,7 +96,6 @@ def do_eval(eval_dataloader, output_dir, out_file):
     
     return score
 
-
 # Created a dataladoer for the augmented training dataset
 def create_augmented_dataloader(dataset):
     
@@ -102,16 +106,31 @@ def create_augmented_dataloader(dataset):
     # dataloader will be for the original training split augmented with 5k random transformed examples from the training set.
     # You may want to set load_from_cache_file to False when using dataset maps
     # You may find it helpful to see how the dataloader was created at other place in this code.
+
+    # 5000 randomly transformed examples
+    train_augmented_size = 5000
+    train_transformed_sample = dataset["train"].shuffle(seed=42).select(range(train_augmented_size))
+    train_transformed_sample = train_transformed_sample.map(custom_transform, load_from_cache_file=False) 
+
+    # Augment the training data with 5000 randomly transformed examples to create the new augmented training dataset
+    # Final dataset train size: "25,000" + "5,000" = "30,000" 
+    train_transformed_dataset = concatenate_datasets([dataset["train"], train_transformed_sample])                                                
     
     train_dataloader = None
-    
-    raise NotImplementedError
-    
+
+    tokenized_dataset = train_transformed_dataset.map(tokenize_function, batched=True)
+
+    # Prepare dataset for use by model
+    tokenized_dataset = tokenized_dataset.remove_columns(["text"])
+    tokenized_dataset = tokenized_dataset.rename_column("label", "labels")
+    tokenized_dataset.set_format("torch")
+
+    # Create dataloaders for iterating over the dataset
+    train_dataloader = DataLoader(tokenized_dataset, shuffle=True, batch_size=8)
     
     ##### YOUR CODE ENDS HERE ######
     
     return train_dataloader
-
 
 # Create a dataloader for the transformed test set
 def create_transformed_dataloader(dataset, debug_transformation):
