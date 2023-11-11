@@ -253,6 +253,56 @@ def expand_contradictions(text):
     
     return text
 
+################
+# Random Swaps #
+################
+
+def random_swap(text: str, pct_swap: float = 0.2) -> str:
+    """Swap {pct_swap}% of words in a sentence with a random chosen word
+    :param text (str):
+    :param pct_swap (float): percentage of words to be swapped. Between 0 and 1
+    :return: transformed text
+    """
+    # Tokenize sentence
+    word_list  = word_tokenize(text)
+
+    n_tokens = len(word_list)
+    n_swaps = int(n_tokens*pct_swap)
+    for i in range(n_swaps):
+        # Get indices
+        index_1, index_2 = random.sample(range(len(word_list)), 2)
+        # Swap words
+        word_list[index_1], word_list[index_2] = word_list[index_2], word_list[index_1]
+
+
+    # Put sentence together again:
+    text = TreebankWordDetokenizer().detokenize(word_list)
+    return text
+
+###################
+# Random Deletion #
+###################
+
+def random_deletion(text: str, pct_deletion: float = 0.1) -> str:
+    """Remove {pct_deletion}% of words in a sentence
+    :param text (str):
+    :param pct_deletion (float): percentage of words to be deleted. Between 0 and 1
+    :return: transformed text
+    """
+    # Tokenize sentence
+    word_list  = word_tokenize(text)
+
+    n_tokens = len(word_list)
+    n_deletion = int(n_tokens*pct_deletion)
+
+    indexes_deleted = random.sample(range(len(word_list)), n_deletion)
+    for index in sorted(indexes_deleted, reverse=True):
+        word_list.pop(index)
+
+
+    # Put sentence together again:
+    text = TreebankWordDetokenizer().detokenize(word_list)
+    return text
 
 def custom_transform(example):
     
@@ -266,13 +316,17 @@ def custom_transform(example):
     # You should update example["text"] using your transformation
     
     # Select transformation
-    selected_transformation = random.choice(["typo", "synonym"])
+    selected_transformation = random.choice(["typo", "synonym", "swap", "deletion"])
 
     text = example["text"]
     if selected_transformation == "typo":
         text = add_typos(text)
-    else:
+    elif selected_transformation == "synonym":
         text = replace_with_synonym(text)
+    elif selected_transformation == "swap":
+        text = random_swap(text)
+    else:
+        text = random_deletion(text)
 
     # Apply contractions to all of them
     text = expand_contradictions(text)
