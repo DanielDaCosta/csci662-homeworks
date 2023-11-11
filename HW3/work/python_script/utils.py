@@ -20,6 +20,7 @@ from nltk.tokenize.treebank import TreebankWordDetokenizer
 import string
 from nltk import pos_tag
 import re
+from gensim.models import Word2Vec
 
 random.seed(0)
 
@@ -304,6 +305,42 @@ def random_deletion(text: str, pct_deletion: float = 0.1) -> str:
     text = TreebankWordDetokenizer().detokenize(word_list)
     return text
 
+
+def replace_with_synonym_word2vec(text: str, pct_synonyms: float = 0.4, word2vec_file: str = "word2vec_model.bin") -> str:
+    """Replace {pct_synonyms}% of words in a sentence with their synonyms based on Word2Vec cosine similarity
+    :param text (str):
+    :param pct_synonyms (float): percentage of words to be replaced. Between 0 and 1
+    :param word2vec_file (str): word2vec file
+    :return: transformed text
+    """
+    # Tokenize sentence
+    word_list  = word_tokenize(text)
+
+    # Read word2vec
+    loaded_model = Word2Vec.load("word2vec_model.bin")
+    vocabulary = loaded_model.wv.index_to_key
+    
+    # word_list words that have are in vocabulary
+    word_list_indices_filtered = [i for i in range(len(word_list)) if word_list[i] in vocabulary]
+
+    n_tokens = len(word_list_indices_filtered) # only count the tokens that are in vocabulary
+    n_synonyms = int(n_tokens*pct_synonyms)
+
+
+    # Select indices based on pct_typos
+    word_indices = [index for index in range(len(word_list)) if index in word_list_indices_filtered]
+    selected_indices = random.sample(word_indices, k = n_synonyms)
+
+    for chosen_index in selected_indices:
+        chosen_word = word_list[chosen_index]
+
+        synonym = loaded_model.wv.most_similar(chosen_word, topn=1)[0][0]
+        word_list[chosen_index] = synonym
+
+    # Put sentence together again:
+    text = TreebankWordDetokenizer().detokenize(word_list)
+    return text
+
 def custom_transform(example):
     
     ################################
@@ -316,7 +353,7 @@ def custom_transform(example):
     # You should update example["text"] using your transformation
     
     # Select transformation
-    selected_transformation = random.choice(["typo", "synonym", "swap", "deletion"])
+    selected_transformation = random.choice(["typo", "synonym", "swap", "deletion", "synonym_word2vec"])
 
     text = example["text"]
     if selected_transformation == "typo":
@@ -325,6 +362,8 @@ def custom_transform(example):
         text = replace_with_synonym(text)
     elif selected_transformation == "swap":
         text = random_swap(text)
+    elif selected_transformation == "synonym_word2vec":
+        text = replace_with_synonym_word2vec(text)
     else:
         text = random_deletion(text)
 
