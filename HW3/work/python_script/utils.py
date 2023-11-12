@@ -24,6 +24,7 @@ import re
 from gensim.models import Word2Vec
 import nltk
 nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 
 random.seed(0)
 
