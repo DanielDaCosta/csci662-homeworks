@@ -14,6 +14,7 @@ from nltk.corpus import wordnet as wn
 from nltk import word_tokenize
 from nltk.tokenize.treebank import TreebankWordDetokenizer
 
+
 ###############
 # New Imports #
 ###############
@@ -21,6 +22,8 @@ import string
 from nltk import pos_tag
 import re
 from gensim.models import Word2Vec
+import nltk
+nltk.download('punkt')
 
 random.seed(0)
 
