@@ -13,6 +13,19 @@ import argparse
 from utils import *
 import os
 
+
+##################
+# ETA: 26:30 min #
+##################
+
+# out_distilbert_original.txt: Score:  {'accuracy': 0.923}
+
+# out_distilbert_transformed.txt Score:  {'accuracy': 0.87332}
+
+# out_distilbert_augmented_transformed.txt Score:  {'accuracy': 0.88216}
+
+# out_distilbert_augmented_original.txt Score: Score:  {'accuracy': 0.9178}
+
 ###############
 # New Imports #
 ###############
