@@ -52,6 +52,10 @@ GPT3.5 (zero-shot):
 - `gpt_out_original.txt`: prediction on the first 100 rows of the original dataset
 - `gpt_out_transformed.txt`: prediction on the first 100 rows of the transformed dataset
 
+
+**CARC Output Files**
+`./CARC_output/`: contain all of CARC outputs for each training and evaluation that were executed
+
 # Usage
 
 ## Fine-Tuning and Evaluating on Original Dataset
