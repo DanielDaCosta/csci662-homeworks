@@ -3,3 +3,5 @@ datasets==2.14.6
 tqdm==4.66.1
 transformers==4.35.0
 evaluate==0.4.1
+gensim==4.3.2
+nltk==3.8.1
